@@ -1,172 +1,141 @@
-# 🛡️ FieldShield
+# FieldShield
 
 **Native Mongoose Global Plugin for Field-Level Access Control**
 
-FieldShield forces developers to explicitly define which roles can see which fields, then automatically filters query results based on the specified role.
+[![npm version](https://img.shields.io/npm/v/@wecon/mongoose-field-shield.svg?style=flat-square)](https://www.npmjs.com/package/@wecon/mongoose-field-shield)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-## 🎯 The Problem
+FieldShield forces developers to explicitly define which roles were authorized to access specific fields, then automatically filters query results based on the provided role. It integrates directly into the Mongoose query lifecycle to ensure data security at the database abstraction layer.
 
-```typescript
-// Without FieldShield - DANGEROUS!
-const users = await User.find();
-return res.json({ data: users }); 
-// ⚠️ Exposes ALL fields: password, salary, internal notes...
-```
+## Key Features
 
-## ✨ The Solution
+- **Field-Level Security:** Define access control rules directly within your Mongoose Schemas.
+- **Role-Based Access:** Simple role string matching for clear authorization logic.
+- **Dynamic Conditions:** Support for runtime evaluations (e.g., owner checks) per field.
+- **Data Transformation:** Capability to mask or transform sensitive data based on roles.
+- **Native Integration:** Works with `find`, `findOne`, and aggregation pipelines seamlessly.
 
-```typescript
-// With FieldShield - SECURE!
-const users = await User.find().role(['admin']);
-return res.json({ data: users }); 
-// ✅ Each role sees only their authorized fields
-```
+## Installation
 
-## 📦 Installation
+Install the package via npm or yarn:
 
 ```bash
-npm install field-shield
+npm install @wecon/mongoose-field-shield
 # or
-yarn add field-shield
+yarn add @wecon/mongoose-field-shield
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. Install the Plugin (BEFORE defining models)
+### 1. Registration
+
+Register the plugin globally with Mongoose before defining any models.
 
 ```typescript
 import mongoose from 'mongoose';
-import { installFieldShield } from 'field-shield';
+import { installFieldShield } from '@wecon/mongoose-field-shield';
 
-// Call this first!
+// Initialize FieldShield with strict mode enabled
 installFieldShield(mongoose, { strict: true });
 ```
 
-### 2. Define Schema with Shield Config
+### 2. Schema Definition
+
+Add the `shield` configuration object to your schema paths.
 
 ```typescript
 const UserSchema = new mongoose.Schema({
-  // Public - visible to everyone
+  // Publicly accessible field
   username: {
     type: String,
     shield: { roles: ['public'] }
   },
   
-  // Protected - authenticated users only
+  // Restricted field (Admin & User roles only)
+  // detailed access control via condition
   email: {
     type: String,
     shield: { 
       roles: ['admin', 'user'],
-      condition: (ctx) => ctx.document._id.equals(ctx.userId) // Owner only
+      condition: (ctx) => ctx.document._id.equals(ctx.userId) // Only owner can view
     }
   },
   
-  // Admin only
+  // Highly restricted field (Admin only)
   salary: {
     type: Number,
     shield: { roles: ['admin', 'hr'] }
   },
   
-  // Hidden from EVERYONE
+  // Hidden field (Empty roles array = inaccessible)
   password: {
     type: String,
-    shield: { roles: [] }  // Empty = hidden
+    shield: { roles: [] }
   }
 });
 ```
 
-### 3. Query with Role (REQUIRED)
+### 3. Executing Queries
+
+Function calls must include the `.role()` modifier to specify the context of the request.
 
 ```typescript
-// ✅ Correct - specify role
+// Authorized query
 const users = await User.find().role(['admin']);
-const user = await User.findById(id).role('user').userId(currentUserId);
 
-// ❌ Throws error - role is mandatory
-const users = await User.find(); // ShieldError: Missing .role()
+// Context-aware query (for ownership checks)
+const user = await User.findById(id)
+  .role('user')
+  .userId(currentUserId);
+
+// Invalid query (Will throw ShieldError)
+// const users = await User.find(); 
 ```
 
-## 📋 Shield Config Options
+## Configuration
 
-```typescript
-shield: {
-  // Required: array of role strings
-  roles: ['admin', 'user'],    // Only these roles can see
-  roles: ['*'],                 // All authenticated users
-  roles: ['public'],            // Everyone (including anonymous)
-  roles: [],                    // Hidden from ALL (even admins)
-  
-  // Optional: dynamic access condition
-  condition: (ctx) => {
-    // ctx.roles - user's roles
-    // ctx.userId - user's ID
-    // ctx.document - full document
-    return ctx.document.ownerId.equals(ctx.userId);
-  },
-  
-  // Optional: transform value
-  transform: (value, ctx) => {
-    if (ctx.roles.includes('admin')) return value;
-    return `***-${value.slice(-4)}`; // Mask for others
-  }
-}
-```
+### Shield Options
 
-## 🔧 API Reference
+The `shield` object in your schema definition accepts the following properties:
 
-### `installFieldShield(mongoose, options)`
+| Property | Type | Description |
+|----------|------|-------------|
+| `roles` | `string[]` | **Required.** Array of allowed roles. Use `['*']` for all authenticated users, `['public']` for everyone, or specific role strings. |
+| `condition` | `Function` | Optional. A synchronous function returning a boolean. Receives a context object `(ctx)` containing `roles`, `userId`, `document`, and `field`. |
+| `transform` | `Function` | Optional. A function to modify the value before return. Useful for masking data (e.g., masking phone numbers). |
+
+### Plugin Initialization
+
+`installFieldShield(mongoose, options)`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `strict` | boolean | `true` | Error if any field lacks shield config |
-| `debug` | boolean | `!production` | Log registered models at startup |
-| `defaultRoles` | string[] | `[]` | Default roles when `strict: false` |
+| `strict` | `boolean` | `true` | If true, throws an error if any schema path is missing a `shield` configuration. Recommended for security. |
+| `debug` | `boolean` | `false` | Enables verbose logging of registered models and policies at startup. |
+| `defaultRoles` | `string[]` | `[]` | Defines default access roles for fields without explicit configuration (only applies when `strict` is false). |
 
-### Query Methods
+## API Reference
 
-| Method | Description |
-|--------|-------------|
-| `.role(roles)` | **Required.** Specify roles for filtering |
-| `.userId(id)` | Specify user ID for owner conditions |
+### Query Chain Methods
 
-## 🔍 Response Examples
+When `FieldShield` is installed, it extends the Mongoose `Query` and `Aggregate` prototypes.
 
-Given a User with all fields populated:
+#### `.role(roles: string | string[])`
+Specifies the role(s) acting on the query. This is mandatory for all queries on shielded models.
 
-**Public User:**
-```json
-{ "_id": "...", "username": "johndoe", "avatar": "..." }
-```
+#### `.userId(id: string)`
+Specifies the ID of the user making the request. Required if usage of `condition` logic depends on user identity (e.g., `ctx.userId`).
 
-**Regular User (viewing own profile):**
-```json
-{ "_id": "...", "username": "johndoe", "avatar": "...", "email": "john@example.com", "phone": "***-4567" }
-```
+## Error Handling
 
-**Admin:**
-```json
-{ "_id": "...", "username": "johndoe", "avatar": "...", "email": "john@example.com", "phone": "555-123-4567", "salary": 100000, "internalNotes": "Great employee" }
-```
+FieldShield is designed to fail securely. If a query violates strict mode or fails to provide necessary context, a `ShieldError` will be thrown with detailed information about the location and nature of the violation.
 
-## ⚠️ Error Messages
-
-FieldShield provides helpful error messages:
-
-```
--=> FieldShield caught an error <=-
-
-✖ Error: Missing .role() on User.find()
-
+```text
+Error: Missing .role() on User.find()
   Details: FieldShield requires every query to specify roles...
-
-  Location: /app/routes/users.ts:42:15
-
-  💡 How to fix:
-  Add .role() before executing the query:
-
-    await User.find(query).role(['admin']);
+  Location: /app/services/user.service.ts:15:20
 ```
 
-## 📄 License
+## License
 
-MIT
+This project is licensed under the MIT License.
