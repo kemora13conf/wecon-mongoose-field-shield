@@ -53,29 +53,37 @@ describe('Error Handling', () => {
   });
 
   describe('Strict mode validation', () => {
-    it('should throw when schema field lacks shield config in strict mode', () => {
+    it('should throw when schema field lacks shield config in strict mode', async () => {
       resetModels();
       setupFieldShield({ strict: true, debug: false });
 
-      expect(() => {
-        const BadSchema = new Schema({
-          name: { type: String, shield: { roles: ['public'] } },
-          email: { type: String }, // Missing shield!
-        });
-        mongoose.model('BadModel', BadSchema);
-      }).toThrow(ShieldError);
+      const BadSchema = new Schema({
+        name: { type: String, shield: { roles: ['public'] } },
+        email: { type: String }, // Missing shield!
+      });
+      const BadModel = mongoose.model('BadModel', BadSchema);
+
+      // Create a document to query
+      await BadModel.create({ name: 'test', email: 'test@example.com' });
+
+      // Error is thrown on first query (lazy validation)
+      await expect(BadModel.findOne().role('public')).rejects.toThrow(ShieldError);
     });
 
-    it('should include field name in error message', () => {
+    it('should include field name in error message', async () => {
       resetModels();
       setupFieldShield({ strict: true, debug: false });
 
+      const BadSchema = new Schema({
+        title: { type: String, shield: { roles: ['public'] } },
+        secretField: { type: String }, // Missing shield!
+      });
+      const BadModel2 = mongoose.model('BadModel2', BadSchema);
+
+      await BadModel2.create({ title: 'Test', secretField: 'secret' });
+
       try {
-        const BadSchema = new Schema({
-          title: { type: String, shield: { roles: ['public'] } },
-          secretField: { type: String }, // Missing shield!
-        });
-        mongoose.model('BadModel2', BadSchema);
+        await BadModel2.findOne().role('public');
         expect.fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(ShieldError);
@@ -83,17 +91,21 @@ describe('Error Handling', () => {
       }
     });
 
-    it('should allow missing shield in non-strict mode', () => {
+    it('should allow missing shield in non-strict mode', async () => {
       resetModels();
       setupFieldShield({ strict: false, debug: false });
 
-      // Should not throw
       const LooseSchema = new Schema({
         name: { type: String, shield: { roles: ['public'] } },
         other: { type: String }, // No shield, but strict is false
       });
       const LooseModel = mongoose.model('LooseModel', LooseSchema);
-      expect(LooseModel).toBeDefined();
+      
+      await LooseModel.create({ name: 'test', other: 'value' });
+      
+      // Should not throw
+      const result = await LooseModel.findOne().role('public');
+      expect(result).toBeDefined();
     });
   });
 

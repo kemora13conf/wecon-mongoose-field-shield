@@ -39,6 +39,8 @@ export type {
   FilterOptions,
   ShieldErrorInfo,
   ShieldErrorTrace,
+  ShieldQueryThis,
+  ShieldAggregateThis,
 } from './types';
 
 export { SHIELD_ROLES, SHIELD_USER_ID } from './types';
@@ -51,6 +53,14 @@ export { PolicyRegistry, parseSchemaShield, calculateAllowedFields, checkRoleAcc
 
 // Document utilities
 export { attachRoleContext, filterLeanDocument, filterLeanDocuments } from './document';
+
+// Pipeline utilities (for advanced aggregation control)
+export {
+  findSafeProjectInsertIndex,
+  findProjectStageIndex,
+  mergeProjections,
+  validatePipelineForShield,
+} from './pipeline-utils';
 
 // Query utilities (for testing)
 export { resetQueryPatch } from './query';

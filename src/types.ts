@@ -167,6 +167,49 @@ export interface ShieldErrorTrace {
 }
 
 // ============================================================================
+// Middleware Context Types
+// ============================================================================
+
+/**
+ * Typed context for query middleware `this` binding.
+ * Use this instead of `any` in pre/post query hooks.
+ */
+export interface ShieldQueryThis<T = any> {
+  /** The model associated with this query */
+  model: { modelName: string };
+  /** Shield roles set via .role() */
+  _shieldRoles?: string[];
+  /** User ID set via .userId() */
+  _shieldUserId?: string;
+  /** If true, shield is bypassed */
+  _shieldBypassed?: boolean;
+  /** Query operation type */
+  op?: string;
+  /** Apply field projection */
+  select(fields: Record<string, 1>): this;
+  /** Set query options */
+  setOptions(options: Record<string, any>): this;
+  /** Get query options */
+  getOptions(): Record<string, any>;
+}
+
+/**
+ * Typed context for aggregate middleware `this` binding.
+ */
+export interface ShieldAggregateThis {
+  /** The model associated with this aggregation */
+  _model?: { modelName: string };
+  /** Shield roles set via .role() */
+  _shieldRoles?: string[];
+  /** User ID set via .userId() */
+  _shieldUserId?: string;
+  /** If true, shield is bypassed */
+  _shieldBypassed?: boolean;
+  /** Get the pipeline array (mutable) */
+  pipeline(): any[];
+}
+
+// ============================================================================
 // Mongoose Extensions
 // ============================================================================
 
