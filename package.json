@@ -1,5 +1,5 @@
 {
-  "name": "field-shield",
+  "name": "@wecon/mongoose-field-shield",
   "version": "1.0.0",
   "description": "Native Mongoose global plugin for field-level access control",
   "main": "dist/index.js",
@@ -7,6 +7,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
