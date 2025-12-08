@@ -1,0 +1,178 @@
+[33mcommit b2979c3fd7e06c4c5aec68a428a8cb05a692a4b6[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;33mtag: [m[1;33mv2.1.3[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Mr.kemora13.conf <Abdelghanielmouak@gmail.com>
+Date:   Mon Dec 8 22:10:30 2025 +0100
+
+    chore: version bump to 2.1.3
+
+[33mcommit b3a46f03777c86ea819e056ff5d8e070967829c1[m[33m ([m[1;33mtag: [m[1;33mv2.1.2[m[33m)[m
+Author: Mr.kemora13.conf <Abdelghanielmouak@gmail.com>
+Date:   Mon Dec 8 22:07:50 2025 +0100
+
+    chore: enable trusted publishing and bump version
+
+[33mcommit 865e2ddb218adb8c900f14333061259c71da050b[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 19:06:23 2025 +0100
+
+    fix: remove cache dependency for docs workflow
+
+[33mcommit 015eb0e56554f7081a51328c373deef4cdf30261[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 19:01:30 2025 +0100
+
+    chore: add gitignore for docs-site
+
+[33mcommit 208bc62b40742097878eb459d9faec60812f6b8e[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 18:52:32 2025 +0100
+
+    docs: Add VitePress documentation site with comprehensive guides
+    
+    - Getting Started, Installation, Quick Start guides
+    - Core concepts: Shield config, Roles, Conditions, Transforms
+    - Advanced: Aggregation security, Strict mode, Performance
+    - API reference: installFieldShield, Query methods
+    - Examples: Basic patterns, Pitfalls, FAQ
+    - GitHub Actions workflow for Pages deployment
+
+[33mcommit a721ecf2f5889bbb0b7b3da7cd3ff42d3584ab7d[m[33m ([m[1;33mtag: [m[1;33mv2.1.1[m[33m)[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 18:02:57 2025 +0100
+
+    chore: bump version to 2.1.1
+
+[33mcommit 123adf778bd1ce3a41f26af2724aa779b9962c24[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 18:02:23 2025 +0100
+
+    fix: Switch to NPM_TOKEN based publishing
+
+[33mcommit 427987866e8ec6e328cc379cc6b6a10a7a61121e[m[33m ([m[1;33mtag: [m[1;33mv2.1.0[m[33m)[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 17:42:57 2025 +0100
+
+    feat(v2.1.0): Remove mongoose.model override, harden aggregation, add types
+    
+    BREAKING CHANGES:
+    - Strict mode validation now happens on first query instead of model creation
+    - mongoose.model is no longer overridden (uses mongoose.plugin only)
+    
+    Features:
+    - Smart aggregation pipeline handling (respects $geoNear, merges $project)
+    - New pipeline-utils.ts with validation and merging utilities
+    - ShieldQueryThis and ShieldAggregateThis TypeScript interfaces
+    - Pipeline validation warnings for $lookup, $unwind, $replaceRoot
+    
+    Fixes:
+    - No more conflicts with other Mongoose plugins
+    - Proper handling of special aggregation stages
+
+[33mcommit cd772189faab29726364623a9fa991a85907ff73[m[33m ([m[1;33mtag: [m[1;33mv1.0.5[m[33m)[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 17:27:38 2025 +0100
+
+    chore: Update repository URL in package.json.
+
+[33mcommit d0a08f3a8f8c3260cfb286fc937dd23552e1204d[m[33m ([m[1;33mtag: [m[1;33mv1.0.4[m[33m)[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 15:22:24 2025 +0100
+
+    chore: Update package.json repository URL to use git+https protocol.
+
+[33mcommit 72c5791aab1da4876ed804b1c73b10a1e39a353b[m[33m ([m[1;33mtag: [m[1;33mv1.0.3[m[33m)[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 15:22:24 2025 +0100
+
+    chore: bump version to 1.0.2 and update repository URL.
+
+[33mcommit 09aee749151f40d6f5fe0a0690cd9188b199adfb[m[33m ([m[1;33mtag: [m[1;33mv1.0.2[m[33m, [m[1;33mtag: [m[1;33mv1.0.1[m[33m)[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 15:09:45 2025 +0100
+
+    chore: bump version to 1.0.1
+
+[33mcommit ebaa047cb3518b086f5a064d8a7c0edd38aa8ec0[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 14:44:31 2025 +0100
+
+    feat: FieldShield v2 release preparation
+    
+    - Rename package to @wecon/mongoose-field-shield
+    - Configure CI/CD with GitHub Actions
+    - Setup Trusted Publishing
+    - Add audit reports and documentation
+
+[33mcommit ebe1242951f29db12dfd9f5c68daa181d14de752[m
+Author: Abdelghani elmouak <abdelghani@flexiapps.net>
+Date:   Mon Dec 8 14:02:32 2025 +0100
+
+    feat: Implement role-based field selection, aggregation protection, and document `toJSON` filtering while returning Mongoose documents.
+
+[33mcommit 12965eb99811ffc8fdfa0fad17aaa281fc7d0f23[m
+Author: Mr.kemora13.conf <Abdelghanielmouak@gmail.com>
+Date:   Mon Dec 8 02:04:19 2025 +0100
+
+    docs: Add comprehensive audit report and remediation plan for the FieldShield library.
+
+[33mcommit c45e2d81139e78078964b319eff436310482304a[m
+Author: Mr.kemora13.conf <Abdelghanielmouak@gmail.com>
+Date:   Mon Dec 8 01:40:36 2025 +0100
+
+    feat: Initial commit - FieldShield v1.0.0
+    
+    🛡️ FieldShield - Native Mongoose Global Plugin for Field-Level Access Control
+    
+    This is a comprehensive Mongoose plugin that enforces field-level access
+    control by requiring developers to explicitly define role-based visibility
+    for schema fields.
+    
+    ## Core Features
+    
+    - **Schema-Level Configuration**: Define field visibility using 'shield'
+      property on schema fields with role arrays and optional conditions
+    - **Mandatory Role Specification**: All queries must include .role() to
+      explicitly declare the requesting user's permissions
+    - **Strict Mode Validation**: Optionally enforces that all fields have
+      shield configurations defined
+    - **Conditional Access**: Support for dynamic field visibility based on
+      document context, user ID, and custom logic
+    - **Field Transformation**: Ability to mask or transform sensitive values
+      based on role (e.g., show last 4 digits of SSN)
+    
+    ## Architecture
+    
+    ### Source Files (src/)
+    - index.ts: Main entry point, exports installFieldShield and types
+    - install.ts: Global plugin registration and mongoose augmentation
+    - query.ts: Query prototype extension for .role() and .userId() methods
+    - filter.ts: Core filtering logic for document field stripping
+    - document.ts: Document-level middleware and post-processing hooks
+    - registry.ts: Schema registry for tracking shield configurations
+    - errors.ts: Custom error classes with developer-friendly formatting
+    - types.ts: TypeScript type definitions and interfaces
+    
+    ### Test Suite (__tests__/)
+    - setup.ts: MongoDB Memory Server configuration for isolated testing
+    - filter.test.ts: Core filtering logic validation
+    - query.test.ts: Query method behavior and chaining tests
+    - errors.test.ts: Error handling and strict mode validation
+    - integration.test.ts: Full plugin lifecycle and populate scenarios
+    - edge-cases.test.ts: Null values, nested objects, large datasets
+    
+    ### Configuration
+    - package.json: Package metadata with peer dependency on Mongoose 6-8
+    - tsconfig.json: TypeScript configuration targeting ES2020
+    - vitest.config.ts: Vitest test runner configuration
+    
+    ### Documentation
+    - README.md: Comprehensive usage guide with examples
+    
+    ## Compatibility
+    
+    - Node.js >= 18.0.0
+    - Mongoose 6.x, 7.x, or 8.x
+    - TypeScript 5.x
+    
+    ## License
+    
+    MIT
