@@ -36,21 +36,24 @@ describe('Core Filtering', () => {
 
       // Admin sees all
       const adminResult = await User.findOne().role('admin');
-      expect(adminResult).toHaveProperty('username', 'john');
-      expect(adminResult).toHaveProperty('email', 'john@example.com');
-      expect(adminResult).toHaveProperty('salary', 100000);
+      const adminJSON = adminResult!.toJSON();
+      expect(adminJSON).toHaveProperty('username', 'john');
+      expect(adminJSON).toHaveProperty('email', 'john@example.com');
+      expect(adminJSON).toHaveProperty('salary', 100000);
 
       // User sees username and email
       const userResult = await User.findOne().role('user');
-      expect(userResult).toHaveProperty('username', 'john');
-      expect(userResult).toHaveProperty('email', 'john@example.com');
-      expect(userResult).not.toHaveProperty('salary');
+      const userJSON = userResult!.toJSON();
+      expect(userJSON).toHaveProperty('username', 'john');
+      expect(userJSON).toHaveProperty('email', 'john@example.com');
+      expect(userJSON).not.toHaveProperty('salary');
 
       // Public sees only username
       const publicResult = await User.findOne().role('public');
-      expect(publicResult).toHaveProperty('username', 'john');
-      expect(publicResult).not.toHaveProperty('email');
-      expect(publicResult).not.toHaveProperty('salary');
+      const publicJSON = publicResult!.toJSON();
+      expect(publicJSON).toHaveProperty('username', 'john');
+      expect(publicJSON).not.toHaveProperty('email');
+      expect(publicJSON).not.toHaveProperty('salary');
     });
 
     it('should handle wildcard (*) role for all authenticated users', async () => {
@@ -64,8 +67,8 @@ describe('Core Filtering', () => {
 
       // Any authenticated role should see all fields
       const result = await Post.findOne().role('random-role');
-      expect(result).toHaveProperty('title', 'Hello');
-      expect(result).toHaveProperty('content', 'World');
+      expect(result?.toJSON()).toHaveProperty('title', 'Hello');
+      expect(result?.toJSON()).toHaveProperty('content', 'World');
     });
 
     it('should handle public role for unauthenticated access', async () => {
@@ -79,8 +82,8 @@ describe('Core Filtering', () => {
 
       // Public sees only title
       const result = await Page.findOne().role('public');
-      expect(result).toHaveProperty('title', 'Welcome');
-      expect(result).not.toHaveProperty('views');
+      expect(result?.toJSON()).toHaveProperty('title', 'Welcome');
+      expect(result?.toJSON()).not.toHaveProperty('views');
     });
   });
 
@@ -101,14 +104,14 @@ describe('Core Filtering', () => {
 
       // Even admin cannot see hidden fields
       const adminResult = await User.findOne().role('admin');
-      expect(adminResult).toHaveProperty('username', 'john');
-      expect(adminResult).not.toHaveProperty('password');
-      expect(adminResult).not.toHaveProperty('refreshToken');
+      expect(adminResult?.toJSON()).toHaveProperty('username', 'john');
+      expect(adminResult?.toJSON()).not.toHaveProperty('password');
+      expect(adminResult?.toJSON()).not.toHaveProperty('refreshToken');
 
       // And neither can anyone else
       const publicResult = await User.findOne().role('public');
-      expect(publicResult).toHaveProperty('username', 'john');
-      expect(publicResult).not.toHaveProperty('password');
+      expect(publicResult?.toJSON()).toHaveProperty('username', 'john');
+      expect(publicResult?.toJSON()).not.toHaveProperty('password');
     });
   });
 
@@ -137,13 +140,13 @@ describe('Core Filtering', () => {
       const ownerResult = await User.findOne()
         .role('user')
         .userId(user._id!.toString());
-      expect(ownerResult).toHaveProperty('email', 'john@example.com');
+      expect(ownerResult?.toJSON()).toHaveProperty('email', 'john@example.com');
 
       // Non-owner cannot see email
       const otherResult = await User.findOne()
         .role('user')
         .userId('different-user-id');
-      expect(otherResult).not.toHaveProperty('email');
+      expect(otherResult?.toJSON()).not.toHaveProperty('email');
     });
 
     it('should allow admin to bypass owner condition when in roles', async () => {
@@ -169,7 +172,7 @@ describe('Core Filtering', () => {
 
       // Admin can see any user's email
       const adminResult = await User.findOne().role('admin');
-      expect(adminResult).toHaveProperty('email', 'john@example.com');
+      expect(adminResult?.toJSON()).toHaveProperty('email', 'john@example.com');
     });
   });
 
@@ -195,11 +198,11 @@ describe('Core Filtering', () => {
 
       // Admin sees full phone
       const adminResult = await User.findOne().role('admin');
-      expect(adminResult).toHaveProperty('phone', '555-123-4567');
+      expect(adminResult?.toJSON()).toHaveProperty('phone', '555-123-4567');
 
       // User sees masked phone
       const userResult = await User.findOne().role('user');
-      expect(userResult).toHaveProperty('phone', '***-***-4567');
+      expect(userResult?.toJSON()).toHaveProperty('phone', '***-***-4567');
     });
 
     it('should transform to hide partial data', async () => {
@@ -222,7 +225,7 @@ describe('Core Filtering', () => {
       });
 
       const userResult = await Payment.findOne().role('user');
-      expect(userResult).toHaveProperty('cardNumber', '****-****-****-1111');
+      expect(userResult?.toJSON()).toHaveProperty('cardNumber', '****-****-****-1111');
     });
   });
 });

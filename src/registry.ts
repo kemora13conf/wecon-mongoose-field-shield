@@ -154,4 +154,81 @@ export function parseSchemaShield(
   return { policy, schemaFields };
 }
 
+/**
+ * Check if user roles match any allowed roles.
+ */
+export function checkRoleAccess(allowedRoles: string[], userRoles: string[]): boolean {
+  // Empty roles = hidden from everyone
+  if (allowedRoles.length === 0) {
+    return false;
+  }
+
+  // Wildcard = all authenticated users
+  if (allowedRoles.includes('*')) {
+    return true;
+  }
+
+  // Public = everyone including unauthenticated
+  if (allowedRoles.includes('public')) {
+    return true;
+  }
+
+  // Check for role intersection
+  return allowedRoles.some((role) => userRoles.includes(role));
+}
+
+/**
+ * Calculate allowed fields for given roles.
+ * Always includes _id for Mongoose hydration.
+ * 
+ * @param modelName - The model name for policy lookup
+ * @param roles - User roles to check access for
+ * @returns Object with fields to select and fields needing post-processing
+ */
+export function calculateAllowedFields(
+  modelName: string,
+  roles: string[]
+): { selectFields: string[]; conditionFields: Set<string> } {
+  const policy = PolicyRegistry.getModelPolicy(modelName);
+  
+  if (!policy) {
+    // No policy = return empty (strict mode should catch this earlier)
+    return { selectFields: ['_id'], conditionFields: new Set() };
+  }
+
+  const selectFields = new Set<string>(['_id']); // Always include _id
+  const conditionFields = new Set<string>();
+
+  for (const [field, config] of policy) {
+    // Skip internal fields that shouldn't be in select
+    if (field === '__v') continue;
+
+    if (checkRoleAccess(config.roles, roles)) {
+      selectFields.add(field);
+
+      // If field has condition, mark for post-processing
+      if (config.condition) {
+        conditionFields.add(field);
+      }
+    } else if (config.condition) {
+      // Field not accessible by role, but has condition
+      // We might still need to fetch it for condition evaluation
+      // Only add if the roles could potentially pass the condition
+      // For now, we don't fetch - condition requires role access first
+    }
+  }
+
+  return {
+    selectFields: Array.from(selectFields),
+    conditionFields,
+  };
+}
+
+/**
+ * Build a MongoDB projection string from allowed fields.
+ */
+export function buildProjectionString(fields: string[]): string {
+  return fields.join(' ');
+}
+
 export default PolicyRegistry;

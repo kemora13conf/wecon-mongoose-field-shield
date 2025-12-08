@@ -29,7 +29,7 @@ describe('Edge Cases', () => {
       await Doc.create({ title: 'Test', content: null });
 
       const result = await Doc.findOne().role('public');
-      expect(result).toHaveProperty('title', 'Test');
+      expect(result?.toJSON()).toHaveProperty('title', 'Test');
       // content should be present even if null
       expect(result?.content).toBeNull();
     });
@@ -44,7 +44,7 @@ describe('Edge Cases', () => {
       await Doc.create({ title: 'Test' }); // optional not provided
 
       const result = await Doc.findOne().role('public');
-      expect(result).toHaveProperty('title', 'Test');
+      expect(result?.toJSON()).toHaveProperty('title', 'Test');
     });
   });
 
@@ -73,7 +73,7 @@ describe('Edge Cases', () => {
 
       // __v is internal and doesn't have shield config
       // It should be excluded since strict mode is on
-      expect(result).not.toHaveProperty('__v');
+      expect(result?.toJSON()).not.toHaveProperty('__v');
     });
   });
 
@@ -96,8 +96,9 @@ describe('Edge Cases', () => {
 
       expect(results).toHaveLength(100);
       results.forEach((doc: any, i: number) => {
-        expect(doc).toHaveProperty('index');
-        expect(doc).not.toHaveProperty('value');
+        const json = doc.toJSON();
+        expect(json).toHaveProperty('index');
+        expect(json).not.toHaveProperty('value');
       });
     });
   });
@@ -118,11 +119,11 @@ describe('Edge Cases', () => {
         Record.findOne().role('admin'),
       ]);
 
-      expect(publicResult).toHaveProperty('public', 'visible');
-      expect(publicResult).not.toHaveProperty('private');
+      expect(publicResult?.toJSON()).toHaveProperty('public', 'visible');
+      expect(publicResult?.toJSON()).not.toHaveProperty('private');
 
-      expect(adminResult).toHaveProperty('public', 'visible');
-      expect(adminResult).toHaveProperty('private', 'hidden');
+      expect(adminResult?.toJSON()).toHaveProperty('public', 'visible');
+      expect(adminResult?.toJSON()).toHaveProperty('private', 'hidden');
     });
   });
 
@@ -147,11 +148,11 @@ describe('Edge Cases', () => {
       });
 
       const publicView = await Profile.findOne().role('public');
-      expect(publicView).toHaveProperty('name', 'John');
-      expect(publicView).not.toHaveProperty('address');
+      expect(publicView?.toJSON()).toHaveProperty('name', 'John');
+      expect(publicView?.toJSON()).not.toHaveProperty('address');
 
       const adminView = await Profile.findOne().role('admin');
-      expect(adminView).toHaveProperty('address');
+      expect(adminView?.toJSON()).toHaveProperty('address');
       // Mongoose adds _id to subdocuments, so use toMatchObject
       expect(adminView?.address).toMatchObject({
         street: '123 Main St',
@@ -172,11 +173,11 @@ describe('Edge Cases', () => {
       await User.create({ name: 'John', tags: ['vip', 'beta-tester'] });
 
       const publicView = await User.findOne().role('public');
-      expect(publicView).toHaveProperty('name', 'John');
-      expect(publicView).not.toHaveProperty('tags');
+      expect(publicView?.toJSON()).toHaveProperty('name', 'John');
+      expect(publicView?.toJSON()).not.toHaveProperty('tags');
 
       const adminView = await User.findOne().role('admin');
-      expect(adminView).toHaveProperty('tags');
+      expect(adminView?.toJSON()).toHaveProperty('tags');
       expect(adminView?.tags).toEqual(['vip', 'beta-tester']);
     });
   });

@@ -29,7 +29,7 @@ describe('Query Interception', () => {
       await Item.create({ name: 'Test' });
 
       const result = await Item.findOne().role('user');
-      expect(result).toHaveProperty('name', 'Test');
+      expect(result?.toJSON()).toHaveProperty('name', 'Test');
     });
 
     it('should accept multiple roles as array', async () => {
@@ -41,7 +41,7 @@ describe('Query Interception', () => {
       await Item.create({ name: 'Test' });
 
       const result = await Item.findOne().role(['admin', 'superadmin']);
-      expect(result).toHaveProperty('name', 'Test');
+      expect(result?.toJSON()).toHaveProperty('name', 'Test');
     });
 
     it('should be chainable with other query methods', async () => {
@@ -64,8 +64,8 @@ describe('Query Interception', () => {
         .role('public');
 
       expect(result).toHaveLength(2);
-      expect(result[0]).toHaveProperty('name', 'C');
-      expect(result[1]).toHaveProperty('name', 'B');
+      expect(result[0]?.toJSON()).toHaveProperty('name', 'C');
+      expect(result[1]?.toJSON()).toHaveProperty('name', 'B');
     });
   });
 
@@ -93,13 +93,13 @@ describe('Query Interception', () => {
       const ownerResult = await Profile.findById(profile._id)
         .role('user')
         .userId(profile._id!.toString());
-      expect(ownerResult).toHaveProperty('ssn', '123-45-6789');
+      expect(ownerResult?.toJSON()).toHaveProperty('ssn', '123-45-6789');
 
       // Without matching userId
       const otherResult = await Profile.findById(profile._id)
         .role('user')
         .userId('other-id');
-      expect(otherResult).not.toHaveProperty('ssn');
+      expect(otherResult?.toJSON()).not.toHaveProperty('ssn');
     });
   });
 
@@ -125,22 +125,23 @@ describe('Query Interception', () => {
       const results = await User.find().role('public');
       expect(results).toHaveLength(3);
       results.forEach((r: any) => {
-        expect(r).toHaveProperty('username');
-        expect(r).not.toHaveProperty('email');
+        const json = r.toJSON();
+        expect(json).toHaveProperty('username');
+        expect(json).not.toHaveProperty('email');
       });
     });
 
     it('should filter findOne() result', async () => {
       const result = await User.findOne({ username: 'alice' }).role('public');
-      expect(result).toHaveProperty('username', 'alice');
-      expect(result).not.toHaveProperty('email');
+      expect(result?.toJSON()).toHaveProperty('username', 'alice');
+      expect(result?.toJSON()).not.toHaveProperty('email');
     });
 
     it('should filter findById() result', async () => {
       const alice = await User.findOne({ username: 'alice' }).role('admin');
       const result = await User.findById(alice._id).role('public');
-      expect(result).toHaveProperty('username', 'alice');
-      expect(result).not.toHaveProperty('email');
+      expect(result?.toJSON()).toHaveProperty('username', 'alice');
+      expect(result?.toJSON()).not.toHaveProperty('email');
     });
 
     it('should handle null results gracefully', async () => {
@@ -174,9 +175,9 @@ describe('Query Interception', () => {
         .select('title secret')
         .role('public');
 
-      expect(result).toHaveProperty('title', 'Test');
+      expect(result?.toJSON()).toHaveProperty('title', 'Test');
       // secret should be filtered out by shield
-      expect(result).not.toHaveProperty('secret');
+      expect(result?.toJSON()).not.toHaveProperty('secret');
     });
   });
 });

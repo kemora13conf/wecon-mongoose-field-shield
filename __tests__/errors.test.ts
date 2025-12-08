@@ -120,10 +120,15 @@ describe('Error Handling', () => {
 
       await Broken.create({ name: 'Test', data: 'Secret' });
 
-      // Should throw ShieldError with helpful message
-      await expect(
-        Broken.findOne().role('user')
-      ).rejects.toThrow(ShieldError);
+      // With projection-based architecture, condition errors are handled gracefully
+      // in toJSON - the field is excluded and error is logged
+      const result = await Broken.findOne().role('user');
+      const json = result?.toJSON();
+      
+      // The document should be returned
+      expect(json).toHaveProperty('name', 'Test');
+      // The field with broken condition should be excluded (safe default)
+      expect(json).not.toHaveProperty('data');
     });
   });
 });

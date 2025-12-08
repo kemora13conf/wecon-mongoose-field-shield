@@ -1,17 +1,23 @@
 /**
- * FieldShield v1 - Installation
+ * FieldShield v2 - Installation
  *
  * Main entry point for installing FieldShield into Mongoose.
+ * Uses native middleware patterns for Mongoose-friendly integration.
+ *
  * Call this BEFORE defining any models.
  */
 
-import type { Mongoose } from 'mongoose';
+import type { Mongoose, Schema } from 'mongoose';
 import chalk from 'chalk';
 import { ShieldOptions } from './types';
 import { PolicyRegistry, parseSchemaShield } from './registry';
-import { patchQueryPrototype } from './query';
-import { patchSchemaTransforms } from './document';
+import { patchQueryPrototype, registerQueryMiddleware, resetQueryPatch } from './query';
+import { patchAggregatePrototype, registerAggregateMiddleware, resetAggregatePatch } from './aggregate';
+import { registerDocumentTransforms } from './document';
 import { ShieldError } from './errors';
+
+// Track installation state
+let isInstalled = false;
 
 /**
  * Install FieldShield into Mongoose.
@@ -46,7 +52,7 @@ export function installFieldShield(
 
   if (debug) {
     console.log(
-      chalk.cyan.bold('\n🛡️  FieldShield') +
+      chalk.cyan.bold('\n🛡️  FieldShield v2') +
         chalk.white(' installing...') +
         chalk.gray(` (strict: ${strict})`) +
         '\n'
@@ -54,111 +60,83 @@ export function installFieldShield(
   }
 
   // ============================================================================
-  // 1. Patch Query prototype
+  // 1. Patch Query prototype with .role(), .userId(), .bypassShield() methods
   // ============================================================================
 
   patchQueryPrototype(mongoose);
 
   // ============================================================================
-  // 2. Register global plugin to parse schemas
+  // 2. Patch Aggregate prototype with .role(), .userId(), .bypassShield() methods
   // ============================================================================
 
-  mongoose.plugin(function fieldShieldPlugin(schema, opts) {
-    // This runs for every new schema
+  patchAggregatePrototype(mongoose);
 
-    // Hook into model compilation
-    schema.pre('init', function () {
-      // Get model name from constructor
-      const modelName = (this.constructor as any).modelName;
-      if (!modelName) return;
+  // ============================================================================
+  // 3. Register global plugin that sets up per-schema middleware
+  // ============================================================================
 
-      // Check if we've already registered this model
-      if (PolicyRegistry.hasModel(modelName)) return;
+  mongoose.plugin(function fieldShieldPlugin(schema: Schema, opts: any) {
+    // Hook into model compilation to register middleware
+    const modelName = opts?.modelName;
 
-      // Parse shield config from schema
-      const { policy, schemaFields } = parseSchemaShield(schema, modelName);
-
-      // Handle strict mode validation
-      if (strict && policy.size > 0) {
-        // Only validate if schema has at least one shield field
-        const validation = PolicyRegistry.validateStrict(modelName, schemaFields);
-
-        if (!validation.valid) {
-          for (const field of validation.missingFields) {
-            ShieldError.missingShieldConfig(modelName, field);
-          }
-        }
-      }
-
-      // Register if we have any shield configs
-      if (policy.size > 0) {
-        PolicyRegistry.register(modelName, policy);
-
-        // Apply toJSON/toObject transforms
-        patchSchemaTransforms(schema, modelName);
-
-        if (debug) {
-          console.log(
-            chalk.green('  ✓') +
-              chalk.white(` Registered: ${modelName}`) +
-              chalk.gray(` (${policy.size} shielded fields)`)
-          );
-        }
-      }
-    });
-
-    // Also try to register during model creation
-    schema.post('init', function () {
-      // Re-register if needed after document init
-      const modelName = (this.constructor as any).modelName;
-      if (modelName && !PolicyRegistry.hasModel(modelName)) {
-        registerModelFromSchema(schema, modelName, strict, defaultRoles, debug);
-      }
-    });
+    // We need to wait for the schema to be attached to a model
+    // Use a flag to track if we've processed this schema
+    (schema as any)._shieldPending = {
+      strict,
+      defaultRoles,
+      debug,
+    };
   });
 
   // ============================================================================
-  // 3. Override mongoose.model to catch all model creations
+  // 4. Override mongoose.model to register middleware per-model
   // ============================================================================
 
   const originalModel = mongoose.model.bind(mongoose);
 
   (mongoose as any).model = function (
     name: string,
-    schema?: any,
+    schema?: Schema,
     collection?: string,
     options?: any
   ) {
-    // If schema is provided, register it
-    if (schema) {
-      registerModelFromSchema(schema, name, strict, defaultRoles, debug);
+    // If schema is provided, set up FieldShield middleware
+    if (schema && !PolicyRegistry.hasModel(name)) {
+      const shieldOptions = (schema as any)._shieldPending || {
+        strict,
+        defaultRoles,
+        debug,
+      };
+
+      registerModelShield(schema, name, shieldOptions, debug);
     }
 
     return originalModel(name, schema, collection, options);
   };
 
+  isInstalled = true;
+
   if (debug) {
-    console.log(chalk.cyan('  FieldShield ready!\n'));
+    console.log(chalk.cyan('  FieldShield v2 ready!\n'));
   }
 }
 
 /**
- * Register a model's shield config from its schema.
+ * Register FieldShield middleware for a model.
  */
-function registerModelFromSchema(
-  schema: any,
+function registerModelShield(
+  schema: Schema,
   modelName: string,
-  strict: boolean,
-  defaultRoles: string[],
+  options: { strict: boolean; defaultRoles: string[]; debug: boolean },
   debug: boolean
 ): void {
-  // Don't re-register
-  if (PolicyRegistry.hasModel(modelName)) return;
+  const { strict, defaultRoles } = options;
 
   try {
+    // Parse shield config from schema
     const { policy, schemaFields } = parseSchemaShield(schema, modelName);
 
-    // If no shield configs found and not strict, skip
+    // If no shield configs found, skip
     if (policy.size === 0) {
       if (debug) {
         console.log(
@@ -174,9 +152,8 @@ function registerModelFromSchema(
       const missingFields: string[] = [];
 
       for (const field of schemaFields) {
-        // Skip internal Mongoose fields (auto-generated)
+        // Skip internal Mongoose fields
         if (field === '_id' || field === '__v') continue;
-        // Skip other internal fields
         if (field.startsWith('_')) continue;
 
         if (!policy.has(field)) {
@@ -185,14 +162,21 @@ function registerModelFromSchema(
       }
 
       if (missingFields.length > 0) {
-        // Report first missing field
         ShieldError.missingShieldConfig(modelName, missingFields[0]);
       }
     }
 
-    // Register
+    // Register the model's policy
     PolicyRegistry.register(modelName, policy);
-    patchSchemaTransforms(schema, modelName);
+
+    // Register query middleware (pre/post find, findOne, etc.)
+    registerQueryMiddleware(schema, modelName);
+
+    // Register aggregate middleware (pre aggregate)
+    registerAggregateMiddleware(schema, modelName);
+
+    // Register document transforms (toJSON, toObject)
+    registerDocumentTransforms(schema, modelName);
 
     if (debug) {
       console.log(
@@ -229,11 +213,21 @@ export function getShieldDebugInfo(): string {
 }
 
 /**
- * Clear all registered policies.
+ * Clear all registered policies and reset state.
  * Useful for testing.
  */
 export function clearShield(): void {
   PolicyRegistry.clear();
+  resetQueryPatch();
+  resetAggregatePatch();
+  isInstalled = false;
 }
 
-export default { installFieldShield, getShieldDebugInfo, clearShield };
+/**
+ * Check if FieldShield is installed.
+ */
+export function isShieldInstalled(): boolean {
+  return isInstalled;
+}
+
+export default { installFieldShield, getShieldDebugInfo, clearShield, isShieldInstalled };

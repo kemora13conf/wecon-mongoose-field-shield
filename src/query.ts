@@ -1,34 +1,32 @@
 /**
- * FieldShield v1 - Query Interception
+ * FieldShield v2 - Query Interception
  *
- * Patches Mongoose Query prototype to:
- * 1. Add .role() chainable method
- * 2. Add .userId() chainable method
- * 3. Override exec() to validate role and filter results
+ * Uses native Mongoose middleware pattern:
+ * 1. Adds .role() and .userId() chainable methods to Query
+ * 2. Uses pre('find') middleware to apply .select() projections at DB level
+ * 3. Preserves Mongoose Documents (no POJO conversion)
  */
 
-import type { Mongoose, Query } from 'mongoose';
-import { FilterOptions } from './types';
+import type { Mongoose, Query, Schema } from 'mongoose';
 import { ShieldError } from './errors';
-import { PolicyRegistry } from './registry';
-import { filterDocument, filterDocuments, filterWithPopulate } from './filter';
+import { PolicyRegistry, calculateAllowedFields } from './registry';
+
+// Track if we've already patched the Query prototype
+let isPatched = false;
 
 /**
- * Patch Mongoose Query prototype with FieldShield methods.
+ * Patch Mongoose Query prototype with .role() and .userId() methods.
+ * This only adds the methods, not the middleware.
  */
 export function patchQueryPrototype(mongoose: Mongoose): void {
-  const QueryPrototype = mongoose.Query.prototype as any;
+  if (isPatched) return;
+  isPatched = true;
 
-  // ============================================================================
-  // Add .role() method
-  // ============================================================================
+  const QueryPrototype = mongoose.Query.prototype as any;
 
   /**
    * Specify roles for field filtering.
-   * REQUIRED on all queries.
-   *
-   * @param roles - Single role or array of roles
-   * @returns Query for chaining
+   * REQUIRED on all queries for shielded models.
    */
   QueryPrototype.role = function (roles: string | string[]): Query<any, any> {
     const roleArray = Array.isArray(roles) ? roles : [roles];
@@ -36,137 +34,140 @@ export function patchQueryPrototype(mongoose: Mongoose): void {
     return this;
   };
 
-  // ============================================================================
-  // Add .userId() method
-  // ============================================================================
-
   /**
    * Specify user ID for owner-based conditions.
-   *
-   * @param id - The current user's ID
-   * @returns Query for chaining
    */
   QueryPrototype.userId = function (id: string): Query<any, any> {
     this._shieldUserId = id;
     return this;
   };
 
-  // ============================================================================
-  // Override exec() to validate and filter
-  // ============================================================================
+  /**
+   * Bypass FieldShield for internal queries (auth, migrations, etc).
+   * Use with caution!
+   */
+  QueryPrototype.bypassShield = function (): Query<any, any> {
+    this._shieldBypassed = true;
+    return this;
+  };
+}
 
-  const originalExec = QueryPrototype.exec;
+/**
+ * Register query middleware on a schema.
+ * This applies projections at the database level.
+ */
+export function registerQueryMiddleware(
+  schema: Schema,
+  modelName: string
+): void {
+  // Pre-middleware handler for field projection
+  const preHandler = function (this: any) {
+    // Check if shield is bypassed
+    if (this._shieldBypassed) {
+      return;
+    }
 
-  QueryPrototype.exec = async function (): Promise<any> {
-    const modelName = this.model.modelName;
-    const operation = this.op;
+    // Check if model has shield policies
+    if (!PolicyRegistry.hasModel(modelName)) {
+      return; // No policy = no filtering
+    }
 
     // Check if role was specified
     const roles = this._shieldRoles;
     if (!roles) {
-      ShieldError.missingRole(modelName, operation);
+      ShieldError.missingRole(modelName, this.op || 'query');
     }
 
-    // Check if model is registered (strict mode validation happens at schema compile time)
-    if (!PolicyRegistry.hasModel(modelName)) {
-      // Model has no shield config - pass through
-      // This allows non-shielded models to work normally
-      return originalExec.call(this);
+    // Calculate which fields to select
+    const { selectFields, conditionFields } = calculateAllowedFields(modelName, roles);
+
+    // Apply projection to the query using object notation for whitelist
+    const projectionObj: Record<string, 1> = {};
+    for (const field of selectFields) {
+      projectionObj[field] = 1;
     }
+    
+    this.select(projectionObj);
 
-    // Execute the original query
-    const result = await originalExec.call(this);
-
-    if (!result) return result;
-
-    // Build filter options
-    const filterOptions: FilterOptions = {
-      roles,
-      userId: this._shieldUserId,
-      populatePaths: this._mongooseOptions?.populate
-        ? extractPopulatePaths(this._mongooseOptions.populate)
-        : undefined,
-    };
-
-    // Filter the result
-    if (Array.isArray(result)) {
-      // Handle populate paths if present
-      if (filterOptions.populatePaths && filterOptions.populatePaths.size > 0) {
-        return Promise.all(
-          result.map((doc) =>
-            filterWithPopulate(doc, modelName, filterOptions)
-          )
-        );
-      }
-      return filterDocuments(result, modelName, filterOptions);
-    } else {
-      if (filterOptions.populatePaths && filterOptions.populatePaths.size > 0) {
-        return filterWithPopulate(result, modelName, filterOptions);
-      }
-      return filterDocument(result, modelName, filterOptions);
-    }
+    // Store condition fields for post-processing in toJSON
+    this.setOptions({
+      _shieldConditionFields: conditionFields,
+      _shieldRoles: roles,
+      _shieldUserId: this._shieldUserId,
+    });
   };
 
-  // ============================================================================
-  // Override then() for queries used with await
-  // ============================================================================
+  // Register pre middleware for each query type
+  schema.pre('find', preHandler);
+  schema.pre('findOne', preHandler);
+  schema.pre('findOneAndUpdate', preHandler);
+  schema.pre('findOneAndDelete', preHandler);
+  schema.pre('findOneAndReplace', preHandler);
 
-  // Mongoose queries are thenable, so we need to ensure exec() is called
-  // The default then() already calls exec(), so this should work automatically
+  // Post-middleware handler to attach role context
+  const postHandler = function (this: any, result: any) {
+    if (this._shieldBypassed || !result) {
+      return;
+    }
+
+    const roles = this._shieldRoles || this.getOptions()?._shieldRoles;
+    const userId = this._shieldUserId || this.getOptions()?._shieldUserId;
+
+    if (!roles) return;
+
+    // Attach role context to document(s) for toJSON filtering
+    attachRoleContext(result, roles, userId);
+  };
+
+  // Register post middleware for each query type
+  schema.post('find', postHandler);
+  schema.post('findOne', postHandler);
+  schema.post('findOneAndUpdate', postHandler);
+  schema.post('findOneAndDelete', postHandler);
+  schema.post('findOneAndReplace', postHandler);
 }
 
 /**
- * Extract populate paths and their ref models from query options.
+ * Attach role context to a document or array of documents.
+ * Used for toJSON/toObject condition evaluation.
  */
-function extractPopulatePaths(
-  populateOptions: any
-): Map<string, string> | undefined {
-  const paths = new Map<string, string>();
-
-  if (!populateOptions) return undefined;
-
-  // Handle different populate formats
-  if (typeof populateOptions === 'string') {
-    // Simple string path - we need the ref from schema
-    // This will be looked up during filtering
-    return undefined;
-  }
-
-  if (Array.isArray(populateOptions)) {
-    for (const opt of populateOptions) {
-      extractSinglePopulate(opt, paths);
-    }
-  } else if (typeof populateOptions === 'object') {
-    for (const [path, opt] of Object.entries(populateOptions)) {
-      if (typeof opt === 'object' && (opt as any).model) {
-        paths.set(path, (opt as any).model);
-      }
-    }
-  }
-
-  return paths.size > 0 ? paths : undefined;
-}
-
-/**
- * Extract single populate option.
- */
-function extractSinglePopulate(
-  opt: any,
-  paths: Map<string, string>
+function attachRoleContext(
+  doc: any,
+  roles: string[],
+  userId?: string
 ): void {
-  if (typeof opt === 'string') {
-    // Path only - need to look up ref from schema
+  if (!doc) return;
+
+  if (Array.isArray(doc)) {
+    doc.forEach((d) => attachRoleContext(d, roles, userId));
     return;
   }
 
-  if (typeof opt === 'object') {
-    if (opt.path && opt.model) {
-      paths.set(opt.path, opt.model);
-    } else if (opt.path && typeof opt.path === 'string') {
-      // Path without explicit model - will use schema ref
-      // Store path, model will be resolved during filtering
+  // Only attach to Mongoose documents (not POJOs)
+  if (typeof doc === 'object') {
+    Object.defineProperty(doc, '_shieldRoles', {
+      value: roles,
+      writable: true,
+      enumerable: false,
+      configurable: true,
+    });
+
+    if (userId) {
+      Object.defineProperty(doc, '_shieldUserId', {
+        value: userId,
+        writable: true,
+        enumerable: false,
+        configurable: true,
+      });
     }
   }
 }
 
-export default { patchQueryPrototype };
+/**
+ * Reset patch state (for testing).
+ */
+export function resetQueryPatch(): void {
+  isPatched = false;
+}
+
+export default { patchQueryPrototype, registerQueryMiddleware, resetQueryPatch };

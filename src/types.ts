@@ -197,7 +197,7 @@ declare module 'mongoose' {
     shield?: ShieldConfig;
   }
 
-  // Extend Query to include .role() method
+  // Extend Query to include FieldShield methods
   interface Query<ResultType, DocType, THelpers = {}, RawDocType = unknown, QueryOp = 'find', TDocOverrides = Record<string, never>> {
     /**
      * Specify roles for field filtering.
@@ -220,10 +220,58 @@ declare module 'mongoose' {
      */
     userId(id: string): this;
 
+    /**
+     * Bypass FieldShield for internal queries.
+     * Use with caution - no field filtering will be applied.
+     *
+     * @returns The query for chaining
+     */
+    bypassShield(): this;
+
     /** @internal Shield roles stored on query */
     _shieldRoles?: string[];
     /** @internal User ID stored on query */
     _shieldUserId?: string;
+    /** @internal Shield bypass flag */
+    _shieldBypassed?: boolean;
+  }
+
+  // Extend Aggregate to include FieldShield methods
+  interface Aggregate<ResultType> {
+    /**
+     * Specify roles for field filtering in aggregation.
+     * REQUIRED - aggregations without .role() will throw.
+     *
+     * @param roles Single role or array of roles
+     * @returns The aggregate for chaining
+     *
+     * @example
+     * await User.aggregate(pipeline).role(['admin']);
+     */
+    role(roles: string | string[]): this;
+
+    /**
+     * Specify user ID for owner-based conditions.
+     *
+     * @param userId The current user's ID
+     * @returns The aggregate for chaining
+     */
+    userId(id: string): this;
+
+    /**
+     * Bypass FieldShield for internal aggregations.
+     * Use with caution - no field filtering will be applied.
+     *
+     * @returns The aggregate for chaining
+     */
+    bypassShield(): this;
+
+    /** @internal Shield roles stored on aggregate */
+    _shieldRoles?: string[];
+    /** @internal User ID stored on aggregate */
+    _shieldUserId?: string;
+    /** @internal Shield bypass flag */
+    _shieldBypassed?: boolean;
   }
 
   // Extend Document for role context

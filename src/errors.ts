@@ -52,6 +52,28 @@ export class ShieldError extends Error {
   }
 
   /**
+   * Error: Aggregation executed without .role() call
+   */
+  static missingRoleOnAggregate(modelName: string): never {
+    const trace = this.getCallerInfo();
+    const info: ShieldErrorInfo = {
+      title: `Missing .role() on ${modelName}.aggregate()`,
+      details:
+        'FieldShield requires every aggregation to specify roles for field filtering. ' +
+        'Without this, aggregation pipelines could bypass field-level security.',
+      fix:
+        `Add .role() before executing the aggregation:\n\n` +
+        `  // Single role\n` +
+        `  await ${modelName}.aggregate(pipeline).role('admin');\n\n` +
+        `  // Multiple roles\n` +
+        `  await ${modelName}.aggregate(pipeline).role(['admin', 'user']);\n\n` +
+        `  // For internal queries that need to bypass:\n` +
+        `  await ${modelName}.aggregate(pipeline).bypassShield();`,
+    };
+    this.logAndThrow(info, trace);
+  }
+
+  /**
    * Error: Schema field missing shield config (strict mode)
    */
   static missingShieldConfig(modelName: string, field: string): never {

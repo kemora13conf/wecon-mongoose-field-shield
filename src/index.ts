@@ -1,7 +1,8 @@
 /**
- * FieldShield v1 - Field-Level Access Control for Mongoose
+ * FieldShield v2 - Field-Level Access Control for Mongoose
  *
- * A native Mongoose global plugin that provides role-based field filtering.
+ * A native Mongoose global plugin that provides role-based field filtering
+ * using projection-based architecture for performance and Mongoose integrity.
  *
  * @example
  * import mongoose from 'mongoose';
@@ -16,12 +17,17 @@
  *   password: { type: String, shield: { roles: [] } }
  * });
  *
- * // Query with role
- * const users = await User.find().role(['admin']);
+ * // Query with role - returns real Mongoose Document
+ * const user = await User.findOne().role(['admin']);
+ * user.name = 'Updated';
+ * await user.save(); // Works!
+ *
+ * // Aggregation with role
+ * const results = await User.aggregate([{ $match: {} }]).role('admin');
  */
 
 // Main installation function
-export { installFieldShield, getShieldDebugInfo, clearShield } from './install';
+export { installFieldShield, getShieldDebugInfo, clearShield, isShieldInstalled } from './install';
 
 // Types
 export type {
@@ -41,14 +47,13 @@ export { SHIELD_ROLES, SHIELD_USER_ID } from './types';
 export { ShieldError } from './errors';
 
 // Registry (for advanced use)
-export { PolicyRegistry, parseSchemaShield } from './registry';
-
-// Filter functions (for manual filtering)
-export {
-  filterDocument,
-  filterDocuments,
-  filterWithPopulate,
-} from './filter';
+export { PolicyRegistry, parseSchemaShield, calculateAllowedFields, checkRoleAccess } from './registry';
 
 // Document utilities
-export { attachRoleContext } from './document';
+export { attachRoleContext, filterLeanDocument, filterLeanDocuments } from './document';
+
+// Query utilities (for testing)
+export { resetQueryPatch } from './query';
+
+// Aggregate utilities (for testing)
+export { resetAggregatePatch } from './aggregate';
