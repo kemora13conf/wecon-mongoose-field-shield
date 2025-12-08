@@ -1,0 +1,50 @@
+{
+  "name": "field-shield",
+  "version": "1.0.0",
+  "description": "Native Mongoose global plugin for field-level access control",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "lint": "eslint src/**/*.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mongoose",
+    "mongodb",
+    "access-control",
+    "rbac",
+    "field-level",
+    "authorization",
+    "security",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "mongoose": "^6.0.0 || ^7.0.0 || ^8.0.0"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "mongoose": "^8.0.0",
+    "mongodb-memory-server": "^10.0.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/field-shield"
+  }
+}
