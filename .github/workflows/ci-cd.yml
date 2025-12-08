@@ -38,9 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     # Only run publish on tag push
     if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: read
-      id-token: write # Required for Trusted Publishing (OIDC)
     
     steps:
     - uses: actions/checkout@v4
@@ -60,3 +57,5 @@ jobs:
 
     - name: Publish to NPM
       run: npm publish --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
