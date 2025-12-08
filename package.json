@@ -48,6 +48,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kemora13conf/wecon-field-shield.git"
+    "url": "git+https://github.com/kemora13conf/wecon-mongoose-field-shield.git"
   }
 }
