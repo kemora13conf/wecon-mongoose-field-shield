@@ -37,3 +37,5 @@ coverage/
 
 # Lock files (optional - keeping yarn.lock)
 package-lock.json
+
+/tmp
