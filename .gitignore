@@ -39,3 +39,4 @@ coverage/
 package-lock.json
 
 /tmp
+/docs
