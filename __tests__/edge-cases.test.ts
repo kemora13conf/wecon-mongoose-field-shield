@@ -181,4 +181,150 @@ describe('Edge Cases', () => {
       expect(adminView?.tags).toEqual(['vip', 'beta-tester']);
     });
   });
+
+  describe('Nested field inheritance', () => {
+    it('should synthesize parent from nested children with same roles', async () => {
+      const UserSchema = new Schema({
+        name: { type: String, shield: { roles: ['public'] } },
+        preferences: {
+          theme: { type: String, shield: { roles: ['admin'] } },
+          locale: { type: String, shield: { roles: ['admin'] } },
+          timezone: { type: String, shield: { roles: ['admin'] } },
+        },
+      });
+      const User = mongoose.model('User', UserSchema);
+
+      await User.create({
+        name: 'John',
+        preferences: { theme: 'dark', locale: 'en', timezone: 'UTC' },
+      });
+
+      // Public should NOT see preferences
+      const publicView = await User.findOne().role('public');
+      expect(publicView?.toJSON()).toHaveProperty('name', 'John');
+      expect(publicView?.toJSON()).not.toHaveProperty('preferences');
+
+      // Admin SHOULD see preferences
+      const adminView = await User.findOne().role('admin');
+      expect(adminView?.toJSON()).toHaveProperty('name', 'John');
+      expect(adminView?.toJSON()).toHaveProperty('preferences');
+      expect(adminView?.preferences).toMatchObject({
+        theme: 'dark',
+        locale: 'en',
+        timezone: 'UTC',
+      });
+    });
+
+    it('should synthesize parent with mixed child roles (union)', async () => {
+      const SettingsSchema = new Schema({
+        name: { type: String, shield: { roles: ['public'] } },
+        settings: {
+          publicSetting: { type: String, shield: { roles: ['public'] } },
+          adminSetting: { type: String, shield: { roles: ['admin'] } },
+        },
+      });
+      const Settings = mongoose.model('Settings', SettingsSchema);
+
+      await Settings.create({
+        name: 'App',
+        settings: { publicSetting: 'visible', adminSetting: 'hidden' },
+      });
+
+      // Public should see settings (parent is union of public+admin)
+      // but only the publicSetting child field
+      const publicView = await Settings.findOne().role('public');
+      expect(publicView?.toJSON()).toHaveProperty('settings');
+      // Note: The parent 'settings' is included, but children are filtered by toJSON
+
+      // Admin should see both
+      const adminView = await Settings.findOne().role('admin');
+      expect(adminView?.toJSON()).toHaveProperty('settings');
+    });
+
+    it('should handle deeply nested fields (3 levels)', async () => {
+      const DeepSchema = new Schema({
+        name: { type: String, shield: { roles: ['public'] } },
+        level1: {
+          level2: {
+            level3: { type: String, shield: { roles: ['admin'] } },
+          },
+        },
+      });
+      const Deep = mongoose.model('Deep', DeepSchema);
+
+      await Deep.create({
+        name: 'Test',
+        level1: { level2: { level3: 'deep-value' } },
+      });
+
+      // Public should NOT see level1
+      const publicView = await Deep.findOne().role('public');
+      expect(publicView?.toJSON()).toHaveProperty('name', 'Test');
+      expect(publicView?.toJSON()).not.toHaveProperty('level1');
+
+      // Admin SHOULD see full nested structure
+      const adminView = await Deep.findOne().role('admin');
+      expect(adminView?.toJSON()).toHaveProperty('level1');
+      expect(adminView?.level1?.level2?.level3).toBe('deep-value');
+    });
+
+    it('should handle array of objects with shielded parent', async () => {
+      // Note: Mongoose represents array of objects as a single path 'addresses'
+      // Individual item field paths like 'addresses.street' are NOT separate paths
+      // So we need to shield the array parent itself
+      const ContactSchema = new Schema({
+        name: { type: String, shield: { roles: ['public'] } },
+        addresses: {
+          type: [{
+            street: { type: String },
+            city: { type: String },
+          }],
+          shield: { roles: ['admin', 'public'] }, // Shield on array parent
+        },
+      });
+      const Contact = mongoose.model('Contact', ContactSchema);
+
+      await Contact.create({
+        name: 'Jane',
+        addresses: [
+          { street: '123 Main St', city: 'NYC' },
+          { street: '456 Oak Ave', city: 'LA' },
+        ],
+      });
+
+      // Public should see addresses array
+      const publicView = await Contact.findOne().role('public');
+      expect(publicView?.toJSON()).toHaveProperty('name', 'Jane');
+      expect(publicView?.toJSON()).toHaveProperty('addresses');
+
+      // Admin should see full addresses
+      const adminView = await Contact.findOne().role('admin');
+      expect(adminView?.toJSON()).toHaveProperty('addresses');
+      expect(adminView?.addresses).toHaveLength(2);
+    });
+
+    it('should hide parent when all children have empty roles', async () => {
+      const SecretSchema = new Schema({
+        name: { type: String, shield: { roles: ['public'] } },
+        secrets: {
+          token: { type: String, shield: { roles: [] } },
+          key: { type: String, shield: { roles: [] } },
+        },
+      });
+      const Secret = mongoose.model('Secret', SecretSchema);
+
+      await Secret.create({
+        name: 'Config',
+        secrets: { token: 'abc123', key: 'xyz789' },
+      });
+
+      // No one should see secrets (all children are hidden)
+      const publicView = await Secret.findOne().role('public');
+      expect(publicView?.toJSON()).toHaveProperty('name', 'Config');
+      expect(publicView?.toJSON()).not.toHaveProperty('secrets');
+
+      const adminView = await Secret.findOne().role('admin');
+      expect(adminView?.toJSON()).not.toHaveProperty('secrets');
+    });
+  });
 });

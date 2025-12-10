@@ -160,6 +160,33 @@ await User.aggregate([
 ]).role(['user']);
 ```
 
+### 4. Computed Fields Persistence ($addFields)
+
+FieldShield injects its `$project` stage early in the pipeline (usually after `$match`). Any fields added **later** in the pipeline via `$addFields` or `$set` will be **preserved** and **NOT** filtered.
+
+::: warning Overwriting Restricted Fields
+If you use `$addFields` to overwrite a field that would normally be hidden (e.g., `cost` or `password`), FieldShield will **NOT** protect against this since the overwrite happens *after* the shield projection.
+
+**Example of Risky Pipeline:**
+
+```typescript
+// 'cost' is normally hidden for 'public'
+await Product.aggregate([
+  { $match: { name: 'Laptop' } },
+  { 
+    $addFields: { 
+      // OVERWRITES the hidden 'cost' field with new data!
+      cost: 'Exposed String',
+      
+      // Safe: new computed field
+      displayName: { $concat: ['$name', ' - ', '$status'] }
+    } 
+  }
+]).role(['public']);
+// Result will include 'cost': 'Exposed String'
+```
+:::
+
 ### 4. Test Complex Pipelines
 
 ```typescript

@@ -118,6 +118,10 @@ export const PolicyRegistry = new PolicyRegistryImpl();
 /**
  * Parse shield configurations from a Mongoose schema.
  * Extracts the `shield` property from each path and builds a ModelPolicy.
+ * 
+ * Also:
+ * - Recursively processes embedded schemas (array subdocuments)
+ * - Synthesizes parent field policies from nested children
  */
 export function parseSchemaShield(
   schema: any,
@@ -126,10 +130,36 @@ export function parseSchemaShield(
   const policy: ModelPolicy = new Map();
   const schemaFields: string[] = [];
 
-  // Iterate over all schema paths
+  // Recursively parse schema paths
+  parseSchemaPathsRecursive(schema, '', policy, schemaFields, modelName);
+
+  // Synthesize parent policies from nested children
+  synthesizeParentPolicies(policy);
+
+  return { policy, schemaFields };
+}
+
+/**
+ * Recursively parse schema paths, including embedded schemas for arrays.
+ * 
+ * @param schema - Mongoose schema or embedded schema
+ * @param prefix - Path prefix for nested fields (e.g., 'addresses')
+ * @param policy - Policy map to populate
+ * @param schemaFields - Array to collect all field names
+ * @param modelName - Model name for error messages
+ */
+function parseSchemaPathsRecursive(
+  schema: any,
+  prefix: string,
+  policy: ModelPolicy,
+  schemaFields: string[],
+  modelName: string
+): void {
   for (const [pathName, pathConfig] of Object.entries(schema.paths)) {
     const path = pathConfig as any;
-    schemaFields.push(pathName);
+    const fullPath = prefix ? `${prefix}.${pathName}` : pathName;
+    
+    schemaFields.push(fullPath);
 
     // Check for shield config in path options
     const shieldConfig = path.options?.shield;
@@ -138,20 +168,92 @@ export function parseSchemaShield(
       // Validate shield config structure
       if (!Array.isArray(shieldConfig.roles)) {
         throw new Error(
-          `Invalid shield config for "${pathName}" in ${modelName}: ` +
+          `Invalid shield config for "${fullPath}" in ${modelName}: ` +
             `"roles" must be an array of strings`
         );
       }
 
-      policy.set(pathName, {
+      policy.set(fullPath, {
         roles: shieldConfig.roles,
         condition: shieldConfig.condition,
         transform: shieldConfig.transform,
       });
     }
+
+    // Check for embedded schema (array of subdocuments)
+    // SchemaDocumentArray has a .schema property with the subdocument schema
+    if (path.schema && typeof path.schema.paths === 'object') {
+      parseSchemaPathsRecursive(
+        path.schema,
+        fullPath,
+        policy,
+        schemaFields,
+        modelName
+      );
+    }
+  }
+}
+
+/**
+ * Synthesize parent field policies from nested children.
+ * 
+ * For paths like "preferences.theme" and "preferences.locale",
+ * creates a synthesized "preferences" policy with the union of their roles.
+ * 
+ * @param policy - The policy map to mutate with synthesized parent configs
+ */
+function synthesizeParentPolicies(policy: ModelPolicy): void {
+  // Collect all unique parent prefixes
+  const parentPrefixes = new Set<string>();
+
+  for (const path of policy.keys()) {
+    const parts = path.split('.');
+    // Generate all ancestor prefixes: a.b.c -> [a, a.b]
+    for (let i = 1; i < parts.length; i++) {
+      parentPrefixes.add(parts.slice(0, i).join('.'));
+    }
   }
 
-  return { policy, schemaFields };
+  if (parentPrefixes.size === 0) return;
+
+  // Sort by depth (deepest first) to build up from leaves
+  const sortedPrefixes = Array.from(parentPrefixes).sort((a, b) => {
+    const depthA = a.split('.').length;
+    const depthB = b.split('.').length;
+    return depthB - depthA; // Deepest first
+  });
+
+  for (const prefix of sortedPrefixes) {
+    // Skip if parent already has explicit config
+    if (policy.has(prefix)) continue;
+
+    // Find all direct children of this prefix
+    const childRoles = new Set<string>();
+    let hasAnyChildren = false;
+
+    for (const [path, config] of policy) {
+      // Check if this path is a direct child of the prefix
+      if (path.startsWith(prefix + '.')) {
+        const remainder = path.slice(prefix.length + 1);
+        // Direct child has no further dots (or we also include nested for union)
+        // Actually, for union we want ALL descendants' roles
+        hasAnyChildren = true;
+        for (const role of config.roles) {
+          childRoles.add(role);
+        }
+      }
+    }
+
+    if (hasAnyChildren) {
+      // If all children have empty roles, parent should also be hidden
+      const roles = Array.from(childRoles);
+      
+      policy.set(prefix, {
+        roles: roles,
+        // Mark as synthesized (no condition/transform - those are on children)
+      });
+    }
+  }
 }
 
 /**
@@ -180,6 +282,10 @@ export function checkRoleAccess(allowedRoles: string[], userRoles: string[]): bo
 /**
  * Calculate allowed fields for given roles.
  * Always includes _id for Mongoose hydration.
+ * 
+ * Handles path collision by only including the most specific paths:
+ * - If both 'settings' and 'settings.publicSetting' would be included,
+ *   only 'settings.publicSetting' is kept to avoid MongoDB projection errors.
  * 
  * @param modelName - The model name for policy lookup
  * @param roles - User roles to check access for
@@ -218,10 +324,55 @@ export function calculateAllowedFields(
     }
   }
 
+  // Remove redundant parent paths to avoid MongoDB path collision
+  // If we have both 'settings' and 'settings.theme', keep only 'settings.theme'
+  const filteredFields = removeRedundantParentPaths(Array.from(selectFields));
+
   return {
-    selectFields: Array.from(selectFields),
+    selectFields: filteredFields,
     conditionFields,
   };
+}
+
+/**
+ * Remove parent paths that have children also in the list.
+ * MongoDB projection cannot include both 'a' and 'a.b' - causes path collision.
+ * 
+ * @param paths - Array of field paths
+ * @returns Filtered array with only the most specific paths
+ */
+function removeRedundantParentPaths(paths: string[]): string[] {
+  const result: string[] = [];
+  
+  // Sort by length (shortest first) to process parents before children
+  const sorted = [...paths].sort((a, b) => a.length - b.length);
+  
+  for (const path of sorted) {
+    // Check if any existing path in result is a child of this path
+    const hasChild = result.some(existing => existing.startsWith(path + '.'));
+    
+    // Check if this path is a child of any existing path
+    const isChildOfExisting = result.some(existing => path.startsWith(existing + '.'));
+    
+    if (hasChild) {
+      // This is a parent and we already have its children - skip
+      continue;
+    }
+    
+    if (isChildOfExisting) {
+      // This is a child of an existing path - we need to remove the parent and add the child
+      // Actually, with sorted order (shortest first), parents are added before children
+      // So if isChildOfExisting is true, we should remove the parent and add both
+      // But this is complex... let's use a different approach
+    }
+    
+    result.push(path);
+  }
+  
+  // Second pass: remove any parent that has children
+  return result.filter(path => {
+    return !result.some(other => other !== path && other.startsWith(path + '.'));
+  });
 }
 
 /**

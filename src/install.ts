@@ -242,9 +242,31 @@ function registerModelPolicyFromSchema(
     if (strict) {
       for (const field of schemaFields) {
         if (field === '_id' || field === '__v' || field.startsWith('_')) continue;
-        if (!policy.has(field)) {
-          ShieldError.missingShieldConfig(modelName, field);
+        
+        // Check if field has direct policy
+        if (policy.has(field)) continue;
+        
+        // Check if field is covered by a parent policy (synthesized or explicit)
+        // e.g., 'preferences.theme' is covered if 'preferences' has a policy
+        const parts = field.split('.');
+        let isCoveredByParent = false;
+        for (let i = 1; i < parts.length; i++) {
+          const parentPath = parts.slice(0, i).join('.');
+          if (policy.has(parentPath)) {
+            isCoveredByParent = true;
+            break;
+          }
         }
+        if (isCoveredByParent) continue;
+        
+        // Check if field has children with policies (it's a parent of shielded fields)
+        // e.g., 'addresses' is covered if 'addresses.street' has a policy
+        const hasChildPolicies = Array.from(policy.keys()).some(
+          p => p.startsWith(field + '.')
+        );
+        if (hasChildPolicies) continue;
+        
+        ShieldError.missingShieldConfig(modelName, field);
       }
     }
 

@@ -40,6 +40,7 @@ export default defineConfig({
           items: [
             { text: 'Shield Configuration', link: '/guide/shield-config' },
             { text: 'Role-Based Access', link: '/guide/roles' },
+            { text: 'Nested Objects & Arrays', link: '/guide/nested-arrays' },
             { text: 'Conditions', link: '/guide/conditions' },
             { text: 'Transforms', link: '/guide/transforms' }
           ]
