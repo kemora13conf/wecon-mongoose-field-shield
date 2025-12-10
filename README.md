@@ -1,5 +1,9 @@
 # FieldShield
 
+<div align="center">
+  <img src="assets/logo.png" alt="FieldShield Logo" width="180">
+</div>
+
 **Native Mongoose Global Plugin for Field-Level Access Control**
 
 [![npm version](https://img.shields.io/npm/v/@wecon/mongoose-field-shield.svg?style=flat-square)](https://www.npmjs.com/package/@wecon/mongoose-field-shield)
