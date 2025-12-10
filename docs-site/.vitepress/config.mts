@@ -6,7 +6,7 @@ export default defineConfig({
   base: '/wecon-mongoose-field-shield/',
   
   head: [
-    ['link', { rel: 'icon', href: '/wecon-mongoose-field-shield/favicon.ico' }]
+    ['link', { rel: 'icon', href: '/wecon-mongoose-field-shield/logo.png' }]
   ],
 
   themeConfig: {

@@ -6,7 +6,7 @@ hero:
   text: "Field-Level Access Control"
   tagline: Secure your MongoDB data at the field level with role-based access control, dynamic conditions, and value transforms.
   image:
-    src: /logo.svg
+    src: /logo.png
     alt: FieldShield Logo
   actions:
     - theme: brand
