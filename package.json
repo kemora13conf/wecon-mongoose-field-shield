@@ -1,6 +1,6 @@
 {
   "name": "@wecon/mongoose-field-shield",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Native Mongoose global plugin for field-level access control",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
