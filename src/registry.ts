@@ -1,8 +1,12 @@
 /**
- * FieldShield v1 - Policy Registry
+ * FieldShield v2.2 - Policy Registry
  *
  * Central store for all model shield configurations.
  * Parses shield configs from schemas and provides lookup.
+ *
+ * Performance optimizations:
+ * - Pre-computed projections per role for O(1) query-time lookup
+ * - Cached role combinations to avoid repeated calculations
  */
 
 import {
@@ -13,22 +17,149 @@ import {
 } from './types';
 
 /**
+ * Cached projection result for a specific role combination.
+ */
+interface CachedProjection {
+  selectFields: string[];
+  conditionFields: Set<string>;
+}
+
+/**
+ * Pre-computed access data for a model.
+ */
+interface PrecomputedAccess {
+  // Projections for single roles (most common case)
+  singleRoleProjections: Map<string, CachedProjection>;
+  // Cache for multi-role combinations (computed on demand)
+  multiRoleCache: Map<string, CachedProjection>;
+  // All unique roles used in this model's policy
+  allRoles: Set<string>;
+}
+
+/**
  * PolicyRegistry - Singleton store for all model shield policies.
  *
  * Responsibilities:
  * - Store shield configs parsed from schemas
  * - Provide fast lookup for field filtering
+ * - Pre-compute projections for common roles
  * - Validate schemas in strict mode
  */
 class PolicyRegistryImpl implements IPolicyRegistry {
   private policies = new Map<string, ModelPolicy>();
+  private precomputed = new Map<string, PrecomputedAccess>();
 
   /**
-   * Register policies for a model.
-   * Called during schema compilation.
+   * Register policies for a model and pre-compute projections.
+   * Called during model creation (eager) or first query (fallback).
    */
   register(modelName: string, fields: ModelPolicy): void {
     this.policies.set(modelName, fields);
+
+    // Pre-compute projections for fast query-time lookup
+    this.precomputeProjections(modelName, fields);
+  }
+
+  /**
+   * Pre-compute projections for all unique roles in the policy.
+   * This moves O(n) work from query-time to registration-time.
+   */
+  private precomputeProjections(modelName: string, policy: ModelPolicy): void {
+    const allRoles = new Set<string>();
+    const singleRoleProjections = new Map<string, CachedProjection>();
+
+    // Collect all unique roles from the policy
+    for (const config of policy.values()) {
+      for (const role of config.roles) {
+        allRoles.add(role);
+      }
+    }
+
+    // Always include common special roles
+    allRoles.add('public');
+    allRoles.add('*');
+
+    // Pre-compute projection for each single role
+    for (const role of allRoles) {
+      const projection = this.computeProjection(policy, [role]);
+      singleRoleProjections.set(role, projection);
+    }
+
+    this.precomputed.set(modelName, {
+      singleRoleProjections,
+      multiRoleCache: new Map(),
+      allRoles,
+    });
+  }
+
+  /**
+   * Compute projection for a given set of roles.
+   * This is the core calculation, called once per role at registration.
+   */
+  private computeProjection(policy: ModelPolicy, roles: string[]): CachedProjection {
+    const selectFields = new Set<string>(['_id']);
+    const conditionFields = new Set<string>();
+
+    // Use Set for O(1) role lookup
+    const roleSet = new Set(roles);
+
+    for (const [field, config] of policy) {
+      if (field === '__v') continue;
+
+      if (this.checkRoleAccessFast(config.roles, roleSet)) {
+        selectFields.add(field);
+        if (config.condition) {
+          conditionFields.add(field);
+        }
+      }
+    }
+
+    // Remove redundant parent paths (computed once, cached)
+    const filteredFields = removeRedundantParentPaths(Array.from(selectFields));
+
+    return {
+      selectFields: filteredFields,
+      conditionFields,
+    };
+  }
+
+  /**
+   * Fast role access check using Set for O(1) lookup.
+   */
+  private checkRoleAccessFast(allowedRoles: string[], userRoleSet: Set<string>): boolean {
+    if (allowedRoles.length === 0) return false;
+    if (allowedRoles.includes('*')) return true;
+    if (allowedRoles.includes('public')) return true;
+    return allowedRoles.some(role => userRoleSet.has(role));
+  }
+
+  /**
+   * Get pre-computed projection for roles (fast path).
+   * Returns cached result for single roles, computes and caches for multi-role.
+   */
+  getProjection(modelName: string, roles: string[]): CachedProjection | null {
+    const precomputed = this.precomputed.get(modelName);
+    if (!precomputed) return null;
+
+    // Fast path: single role (most common)
+    if (roles.length === 1) {
+      const cached = precomputed.singleRoleProjections.get(roles[0]);
+      if (cached) return cached;
+    }
+
+    // Check multi-role cache
+    const cacheKey = [...roles].sort().join(',');
+    const cached = precomputed.multiRoleCache.get(cacheKey);
+    if (cached) return cached;
+
+    // Compute and cache for this role combination
+    const policy = this.policies.get(modelName);
+    if (!policy) return null;
+
+    const projection = this.computeProjection(policy, roles);
+    precomputed.multiRoleCache.set(cacheKey, projection);
+
+    return projection;
   }
 
   /**
@@ -85,11 +216,12 @@ class PolicyRegistryImpl implements IPolicyRegistry {
   }
 
   /**
-   * Clear all policies.
+   * Clear all policies and precomputed data.
    * Useful for testing.
    */
   clear(): void {
     this.policies.clear();
+    this.precomputed.clear();
   }
 
   /**

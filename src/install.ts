@@ -1,8 +1,13 @@
 /**
- * FieldShield v2.1 - Installation
+ * FieldShield v2.2 - Installation
  *
  * Main entry point for installing FieldShield into Mongoose.
  * Uses native middleware patterns for Mongoose-friendly integration.
+ *
+ * Key features:
+ * - EAGER validation: Errors thrown at mongoose.model() time, not query time
+ * - Pre-computed projections: O(1) query-time lookups
+ * - Strict mode: Ensures all fields have shield configs
  *
  * Call this BEFORE defining any models.
  */
@@ -10,12 +15,11 @@
 import type { Mongoose, Schema } from 'mongoose';
 import chalk from 'chalk';
 import { ShieldOptions } from './types';
-import { PolicyRegistry, parseSchemaShield } from './registry';
+import { PolicyRegistry, parseSchemaShield, checkRoleAccess } from './registry';
 import { patchQueryPrototype, resetQueryPatch } from './query';
 import { patchAggregatePrototype, resetAggregatePatch } from './aggregate';
 import { registerDocumentTransforms } from './document';
 import { ShieldError } from './errors';
-import { calculateAllowedFields, checkRoleAccess } from './registry';
 import {
   findSafeProjectInsertIndex,
   findProjectStageIndex,
@@ -27,6 +31,10 @@ import {
 let isInstalled = false;
 let globalStrict = true;
 let globalDebug = false;
+
+// Store original mongoose.model for restoration
+let originalMongooseModel: ((...args: any[]) => any) | null = null;
+let mongooseInstance: Mongoose | null = null;
 
 /**
  * Install FieldShield into Mongoose.
@@ -64,39 +72,66 @@ export function installFieldShield(
 
   if (debug) {
     console.log(
-      chalk.cyan.bold('\n🛡️  FieldShield v2.1') +
+      chalk.cyan.bold('\n🛡️  FieldShield v2.2') +
         chalk.white(' installing...') +
         chalk.gray(` (strict: ${strict})`) +
         '\n'
     );
   }
 
+  // Store mongoose instance for cleanup
+  mongooseInstance = mongoose;
+
   // ============================================================================
-  // 1. Patch Query prototype with .role(), .userId(), .bypassShield() methods
+  // 1. Wrap mongoose.model() for EAGER validation
+  //    This ensures errors are thrown at model definition time, not query time
+  // ============================================================================
+
+  if (!originalMongooseModel) {
+    originalMongooseModel = mongoose.model.bind(mongoose);
+
+    (mongoose as any).model = function wrappedModel(
+      name: string,
+      schema?: Schema,
+      ...args: any[]
+    ) {
+      // If schema is provided, validate and register BEFORE creating model
+      if (schema && typeof name === 'string') {
+        // Only process if not already registered (allows re-calling model() to get existing)
+        if (!PolicyRegistry.hasModel(name)) {
+          registerModelPolicyFromSchema(schema, name, globalStrict, globalDebug);
+        }
+      }
+
+      // Call original mongoose.model
+      return originalMongooseModel!(name, schema, ...args);
+    };
+  }
+
+  // ============================================================================
+  // 2. Patch Query prototype with .role(), .userId(), .bypassShield() methods
   // ============================================================================
 
   patchQueryPrototype(mongoose);
 
   // ============================================================================
-  // 2. Patch Aggregate prototype with .role(), .userId(), .bypassShield() methods
+  // 3. Patch Aggregate prototype with .role(), .userId(), .bypassShield() methods
   // ============================================================================
 
   patchAggregatePrototype(mongoose);
 
   // ============================================================================
-  // 3. Register global plugin that sets up per-schema middleware
-  //    Middleware is registered immediately; model name resolved at runtime
+  // 4. Register global plugin that sets up per-schema middleware
+  //    Policy is registered eagerly via mongoose.model wrapper above
+  //    Middleware just applies the pre-computed projections
   // ============================================================================
 
   mongoose.plugin(function fieldShieldPlugin(schema: Schema) {
     // Store options on schema for access in middleware
     (schema as any)._shieldOptions = { strict, debug };
 
-    // Track if this schema has been processed (lazy init)
-    const processedModels = new Set<string>();
-
     // ========================================================================
-    // Register Pre-Query Middleware (handles projection)
+    // Register Pre-Query Middleware (applies pre-computed projections)
     // ========================================================================
     const queryOps = ['find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace'] as const;
 
@@ -106,14 +141,7 @@ export function installFieldShield(
         const modelName = this.model?.modelName;
         if (!modelName) return;
 
-        // Lazy registration: parse and register policy on first query
-        // Use globalStrict/globalDebug to allow test resets
-        if (!processedModels.has(modelName) && !PolicyRegistry.hasModel(modelName)) {
-          registerModelPolicyFromSchema(schema, modelName, globalStrict, globalDebug);
-          processedModels.add(modelName);
-        }
-
-        // Now apply the shield logic
+        // Skip if bypassed or no policy registered
         if (this._shieldBypassed) return;
         if (!PolicyRegistry.hasModel(modelName)) return;
 
@@ -122,22 +150,24 @@ export function installFieldShield(
           ShieldError.missingRole(modelName, op);
         }
 
-        // Calculate which fields to select
-        const { selectFields, conditionFields } = calculateAllowedFields(modelName, roles);
+        // Use pre-computed projection (O(1) lookup)
+        const projection = PolicyRegistry.getProjection(modelName, roles);
 
-        // Apply projection
-        const projectionObj: Record<string, 1> = {};
-        for (const field of selectFields) {
-          projectionObj[field] = 1;
+        if (projection) {
+          // Apply cached projection
+          const projectionObj: Record<string, 1> = {};
+          for (const field of projection.selectFields) {
+            projectionObj[field] = 1;
+          }
+          this.select(projectionObj);
+
+          // Store context for post-processing
+          this.setOptions({
+            _shieldConditionFields: projection.conditionFields,
+            _shieldRoles: roles,
+            _shieldUserId: this._shieldUserId,
+          });
         }
-        this.select(projectionObj);
-
-        // Store context for post-processing
-        this.setOptions({
-          _shieldConditionFields: conditionFields,
-          _shieldRoles: roles,
-          _shieldUserId: this._shieldUserId,
-        });
       });
 
       // Post middleware to attach role context
@@ -153,18 +183,13 @@ export function installFieldShield(
     }
 
     // ========================================================================
-    // Register Pre-Aggregate Middleware
+    // Register Pre-Aggregate Middleware (uses pre-computed projections)
     // ========================================================================
     schema.pre('aggregate', function (this: any) {
       const modelName = (this as any)._model?.modelName;
       if (!modelName) return;
 
-      // Lazy registration
-      if (!processedModels.has(modelName) && !PolicyRegistry.hasModel(modelName)) {
-        registerModelPolicyFromSchema(schema, modelName, globalStrict, globalDebug);
-        processedModels.add(modelName);
-      }
-
+      // Skip if bypassed or no policy registered
       if (this._shieldBypassed) return;
       if (!PolicyRegistry.hasModel(modelName)) return;
 
@@ -173,8 +198,11 @@ export function installFieldShield(
         ShieldError.missingRoleOnAggregate(modelName);
       }
 
-      // Calculate allowed fields
-      const { selectFields } = calculateAllowedFields(modelName, roles);
+      // Use pre-computed projection (O(1) lookup)
+      const projection = PolicyRegistry.getProjection(modelName, roles);
+      if (!projection) return;
+
+      const selectFields = projection.selectFields;
 
       const pipeline = this.pipeline();
 
@@ -209,18 +237,20 @@ export function installFieldShield(
     // ========================================================================
     // Register Document Transforms (toJSON, toObject)
     // ========================================================================
-    registerDocumentTransformsForSchema(schema, processedModels, globalStrict, globalDebug);
+    registerDocumentTransformsForSchema(schema);
   });
 
   isInstalled = true;
 
   if (debug) {
-    console.log(chalk.cyan('  FieldShield v2.1 ready!\n'));
+    console.log(chalk.cyan('  FieldShield v2.2 ready!\n'));
   }
 }
 
 /**
- * Register policy from schema (lazy initialization).
+ * Register policy from schema.
+ * Called eagerly when mongoose.model() is invoked.
+ * Validates in strict mode and throws immediately for missing configs.
  */
 function registerModelPolicyFromSchema(
   schema: Schema,
@@ -298,13 +328,9 @@ function registerModelPolicyFromSchema(
 
 /**
  * Register toJSON/toObject transforms on schema.
+ * Policy is already registered eagerly, so just apply filtering.
  */
-function registerDocumentTransformsForSchema(
-  schema: Schema,
-  processedModels: Set<string>,
-  strict: boolean,
-  debug: boolean
-): void {
+function registerDocumentTransformsForSchema(schema: Schema): void {
   const originalToJSON = schema.get('toJSON') || {};
 
   schema.set('toJSON', {
@@ -321,11 +347,8 @@ function registerDocumentTransformsForSchema(
       const modelName = doc.constructor?.modelName;
       if (!modelName) return ret;
 
-      // Ensure policy is registered
-      if (!PolicyRegistry.hasModel(modelName)) {
-        registerModelPolicyFromSchema(doc.schema, modelName, globalStrict, globalDebug);
-        processedModels.add(modelName);
-      }
+      // Policy should already be registered (eager validation)
+      if (!PolicyRegistry.hasModel(modelName)) return ret;
 
       return applyPostFiltering(ret, modelName, { roles, userId: doc._shieldUserId });
     },
@@ -346,10 +369,8 @@ function registerDocumentTransformsForSchema(
       const modelName = doc.constructor?.modelName;
       if (!modelName) return ret;
 
-      if (!PolicyRegistry.hasModel(modelName)) {
-        registerModelPolicyFromSchema(doc.schema, modelName, globalStrict, globalDebug);
-        processedModels.add(modelName);
-      }
+      // Policy should already be registered (eager validation)
+      if (!PolicyRegistry.hasModel(modelName)) return ret;
 
       return applyPostFiltering(ret, modelName, { roles, userId: doc._shieldUserId });
     },

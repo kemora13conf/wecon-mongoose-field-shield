@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import mongoose, { Schema } from 'mongoose';
 import { setupFieldShield, resetModels } from './setup';
+import { ShieldError } from '../src';
 
 describe('Nested Objects/Arrays in Strict Mode', () => {
   beforeEach(() => {
@@ -211,8 +212,6 @@ describe('Nested Objects/Arrays in Strict Mode', () => {
 
   describe('Should still throw for unshielded leaf fields', () => {
     it('should throw when a leaf field in nested object is not shielded', async () => {
-      setupFieldShield({ strict: true, debug: false });
-
       const BadSchema = new Schema({
         name: { type: String, shield: { roles: ['public'] } },
         settings: {
@@ -221,15 +220,10 @@ describe('Nested Objects/Arrays in Strict Mode', () => {
         },
       });
 
-      const Bad = mongoose.model('Bad', BadSchema);
-
-      // Create a document first
-      await Bad.create({ name: 'test', settings: { theme: 'dark', unshielded: 'secret' } });
-
-      // The error is thrown lazily when query is executed
-      // Note: With current synthesize logic, parent 'settings' gets union of child roles
-      // and 'settings.unshielded' should throw in strict mode
-      await expect(Bad.findOne().role('user')).rejects.toThrow('Missing shield config');
+      // Should throw immediately at model creation
+      expect(() => {
+        mongoose.model('Bad', BadSchema);
+      }).toThrow(ShieldError);
     });
   });
 

@@ -61,13 +61,10 @@ describe('Error Handling', () => {
         name: { type: String, shield: { roles: ['public'] } },
         email: { type: String }, // Missing shield!
       });
-      const BadModel = mongoose.model('BadModel', BadSchema);
-
-      // Create a document to query
-      await BadModel.create({ name: 'test', email: 'test@example.com' });
-
-      // Error is thrown on first query (lazy validation)
-      await expect(BadModel.findOne().role('public')).rejects.toThrow(ShieldError);
+      // Error is thrown IMMEDIATELY at model creation
+      expect(() => {
+        mongoose.model('BadModel', BadSchema);
+      }).toThrow(ShieldError);
     });
 
     it('should include field name in error message', async () => {
@@ -78,12 +75,8 @@ describe('Error Handling', () => {
         title: { type: String, shield: { roles: ['public'] } },
         secretField: { type: String }, // Missing shield!
       });
-      const BadModel2 = mongoose.model('BadModel2', BadSchema);
-
-      await BadModel2.create({ title: 'Test', secretField: 'secret' });
-
       try {
-        await BadModel2.findOne().role('public');
+        mongoose.model('BadModel2', BadSchema);
         expect.fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(ShieldError);
