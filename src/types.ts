@@ -44,6 +44,13 @@ export interface ShieldConfig {
    *   ctx.roles.includes('admin') ? value : `***-${value.slice(-4)}`
    */
   transform?: ShieldTransform;
+
+  /**
+   * @internal
+   * True if this config was auto-synthesized from child policies.
+   * Synthesized policies don't count as "covering" children for strict validation.
+   */
+  _synthesized?: boolean;
 }
 
 /**

@@ -247,10 +247,12 @@ function synthesizeParentPolicies(policy: ModelPolicy): void {
     if (hasAnyChildren) {
       // If all children have empty roles, parent should also be hidden
       const roles = Array.from(childRoles);
-      
+
       policy.set(prefix, {
         roles: roles,
-        // Mark as synthesized (no condition/transform - those are on children)
+        // Mark as synthesized - this is auto-generated from children
+        // and shouldn't count as "covering" children for strict validation
+        _synthesized: true,
       });
     }
   }

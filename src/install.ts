@@ -241,31 +241,42 @@ function registerModelPolicyFromSchema(
     // Strict mode validation
     if (strict) {
       for (const field of schemaFields) {
-        if (field === '_id' || field === '__v' || field.startsWith('_')) continue;
-        
+        // Skip internal fields:
+        // - _id at root level or nested (e.g., 'addresses._id' for subdocuments)
+        // - __v version key
+        // - Any field starting with _ at root level
+        if (field === '_id' || field === '__v') continue;
+        if (field.endsWith('._id')) continue; // Nested _id in subdocuments
+        if (field.startsWith('_')) continue;
+
         // Check if field has direct policy
         if (policy.has(field)) continue;
-        
-        // Check if field is covered by a parent policy (synthesized or explicit)
-        // e.g., 'preferences.theme' is covered if 'preferences' has a policy
+
+        // Check if field is covered by an EXPLICIT (non-synthesized) parent policy.
+        // Synthesized parent policies don't count as "covering" children - they're
+        // just auto-generated for convenience when all children have shields.
+        // e.g., if user puts shield: { roles: ['admin'] } on a parent object,
+        // it covers all children. But if we synthesized the parent from children,
+        // it shouldn't cover children that don't have their own shield.
         const parts = field.split('.');
-        let isCoveredByParent = false;
+        let isCoveredByExplicitParent = false;
         for (let i = 1; i < parts.length; i++) {
           const parentPath = parts.slice(0, i).join('.');
-          if (policy.has(parentPath)) {
-            isCoveredByParent = true;
+          const parentPolicy = policy.get(parentPath);
+          if (parentPolicy && !parentPolicy._synthesized) {
+            isCoveredByExplicitParent = true;
             break;
           }
         }
-        if (isCoveredByParent) continue;
-        
+        if (isCoveredByExplicitParent) continue;
+
         // Check if field has children with policies (it's a parent of shielded fields)
         // e.g., 'addresses' is covered if 'addresses.street' has a policy
         const hasChildPolicies = Array.from(policy.keys()).some(
           p => p.startsWith(field + '.')
         );
         if (hasChildPolicies) continue;
-        
+
         ShieldError.missingShieldConfig(modelName, field);
       }
     }
