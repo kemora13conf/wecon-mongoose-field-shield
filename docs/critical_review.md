@@ -79,5 +79,5 @@ Startlingly competent for a v2 rewrite, but it smells of "Frameworkitis"—tryin
 
 - **`mongoose.model` override:** I agree this is the riskiest part. It gives us eager validation for free, but it is a fragile hook. We should mark it for deprecation and offer a documented escape hatch that relies solely on the standard `mongoose.plugin()` flow.
 - **Aggregation injection:** The current "after initial `$match`" insertion is too naive for `$geoNear`, `$redact`, and pipelines that depend on precise stage ordering. We need a safer merge strategy or an explicit opt-in hook instead of silent mutation.
-- **Singleton registry:** Acceptable for a single process, but we should document lifecycle/reset guidance for multi-connection apps and SSR to avoid state bleed.
+- **Singleton registry:** Acceptable for a single process, but we should document lifecycle/reset guidance for multi-connection apps and SSR to avoid state bleed (e.g., recommend per-connection registries or a documented `clearShield()` call between isolated runtimes/tests).
 - **toJSON cost:** The synchronous walk is fine for small payloads but can block on large result sets or heavy conditions. We should warn users and provide guidance (e.g., lean queries or lighter conditions) to avoid surprises.
