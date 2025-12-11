@@ -294,7 +294,13 @@ function parseSchemaPathsRecursive(
     schemaFields.push(fullPath);
 
     // Check for shield config in path options
-    const shieldConfig = path.options?.shield;
+    let shieldConfig = path.options?.shield;
+
+    // Check for shield config in caster options (for arrays of primitives)
+    // defined like: tags: [{ type: String, shield: { ... } }]
+    if (!shieldConfig && (path as any).caster?.options?.shield) {
+      shieldConfig = (path as any).caster.options.shield;
+    }
 
     if (shieldConfig) {
       // Validate shield config structure

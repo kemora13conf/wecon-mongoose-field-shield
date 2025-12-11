@@ -261,11 +261,16 @@ function registerModelPolicyFromSchema(
   try {
     const { policy, schemaFields } = parseSchemaShield(schema, modelName);
 
+    // If policy is empty:
+    // - In strict mode: we must proceed to validation to catch unshielded fields
+    // - In non-strict mode: we can skip registration as there's nothing to do
     if (policy.size === 0) {
-      if (debug) {
-        console.log(chalk.gray(`  ○ Skipped: ${modelName} (no shield config)`));
+      if (!strict) {
+        if (debug) {
+          console.log(chalk.gray(`  ○ Skipped: ${modelName} (no shield config)`));
+        }
+        return;
       }
-      return;
     }
 
     // Strict mode validation
